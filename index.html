@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    :root {
+      --main-menu-text-color: white;
+      --main-menu-active-text-color: #fecdd3;
+      --main-menu-muted-text-color: rgba(255,255,255,0.55);
+      --window-yoko-border-color: #fda4af;
+      --window-yoko-text-color: #333;
+    }
+
+    /* 全体の基本設定 */
+    body {
+      margin: 0;
+      background: transparent;
+      user-select: none;
+      overflow: hidden;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    /* キャラクターの配置 */
+    #character-container {
+      position: absolute;
+      bottom: 0;
+      left: 10px;
+      width: 320px;
+      min-width: 128px;
+      max-width: 320px;
+      cursor: move;
+      -webkit-app-region: no-drag;
+    }
+
+    #ghost {
+      width: 100%;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    .skinshipDebugArea {
+      position: absolute;
+      display: none;
+      border: 2px solid rgba(34, 197, 94, 0.9);
+      background: rgba(132, 204, 22, 0.28);
+      color: #111;
+      font-size: 14px;
+      font-weight: bold;
+      text-align: center;
+      pointer-events: none;
+      z-index: 20;
+      box-sizing: border-box;
+    }
+
+    .skinshipDebugArea.visible {
+      display: block;
+    }
+
+    @keyframes float {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-10px); }
+      100% { transform: translateY(0px); }
+    }
+
+    /* 通常のセリフ吹き出し */
+    #balloon {
+      position: absolute;
+      left: 260px;
+      bottom: 220px;
+      width: 250px;
+      padding: 15px;
+      background: white;
+      border-radius: 15px;
+      border: 2px solid #333;
+      box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+      font-size: 14px;
+      line-height: 1.4;
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+    }
+
+    #balloon:hover { background: #f0f0f0; }
+
+    /* 下部のメッセージ入力欄 */
+    #inputBox {
+      position: absolute;
+      bottom: 20px;
+      left: 10px;
+      width: 500px;
+      height: 40px;
+      padding: 0 15px;
+      font-size: 16px;
+      border-radius: 20px;
+      border: 2px solid #333;
+      -webkit-app-region: no-drag;
+    }
+
+    /* 非表示用の設定 */
+    .hidden { display: none !important; }
+
+    /* メインメニューのデザイン */
+    #mainMenu {
+      position: absolute;
+      background: rgba(40, 40, 40, 0.9);
+      color: var(--main-menu-text-color);
+      border-radius: 8px;
+      padding: 10px 0;
+      z-index: 1000;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      min-width: 150px;
+    }
+
+    .menuItem {
+      padding: 8px 20px;
+      cursor: pointer;
+      font-size: 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .menuItem:hover { background: rgba(255,255,255,0.2); }
+    .menuItem:last-child { border-bottom: none; }
+    .menuItem.active {
+      color: var(--main-menu-active-text-color);
+      font-weight: bold;
+    }
+    .menuItem.muted {
+      color: var(--main-menu-muted-text-color);
+      cursor: default;
+    }
+    .menuItem.muted:hover { background: transparent; }
+
+    .menuItem.hasSubmenu {
+      position: relative;
+      padding-right: 34px;
+    }
+
+    .menuItem.hasSubmenu::after {
+      content: '>';
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: rgba(255,255,255,0.7);
+    }
+
+    #shellMenu {
+      position: absolute;
+      left: 100%;
+      top: 0;
+      display: none;
+      min-width: 170px;
+      background: rgba(40, 40, 40, 0.94);
+      border-radius: 8px;
+      padding: 10px 0;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+
+    .menuItem.hasSubmenu:hover #shellMenu,
+    .menuItem.hasSubmenu:focus-within #shellMenu {
+      display: block;
+    }
+
+    /* ★ 質問用モーダルを「大きな吹き出し」にするデザイン */
+    #inputModal {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: transparent; /* 背景は暗くせず、透明にする */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 2000;
+      pointer-events: none; /* 背後のキャラを触れるようにする */
+    }
+
+    .modalContent {
+      pointer-events: auto; /* 吹き出しの中だけ操作可能にする */
+      background: white;
+      border: 3px solid var(--window-yoko-border-color); /* Ai-なにかイメージのピンク色枠線 */
+      border-radius: 30px;
+      padding: 30px;
+      width: 450px;
+      position: relative;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      text-align: center;
+      color: var(--window-yoko-text-color);
+    }
+
+    /* モーダルの吹き出しテキスト */
+    #modalBalloon {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 20px;
+      color: var(--window-yoko-text-color);
+    }
+
+    /* モーダル内の入力欄 */
+    #modalInput {
+      width: 90%;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: 2px solid #e2e8f0;
+      margin-bottom: 20px;
+      color: var(--window-yoko-text-color);
+    }
+
+    /* モーダル内のボタン */
+    .modalButtons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    #submitBtn {
+      background: #fb7185;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 20px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    #cancelBtn {
+      background: #f1f5f9;
+      color: #64748b;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 20px;
+      cursor: pointer;
+    }
+
+    #submitBtn:hover { background: #f43f5e; }
+    #cancelBtn:hover { background: #e2e8f0; }
+
+  </style>
+</head>
+<body>
+<div id="character-container">
+  <img id="ghost" src="./ghost_normal.png" />
+  <div id="balloon"></div> 
+</div>
+
+  <!-- 右クリックメニュー -->
+  <div id="mainMenu" class="hidden">
+    <div class="menuItem" onclick="triggerZatsudan()">なにか話して</div>
+    <div class="menuItem" onclick="triggerConversationMode()">会話モード</div>
+    <div class="menuItem" onclick="showTopicInput()">会話デッキ追加</div>
+    <div class="menuItem" onclick="startSelfIntro()">あなたのことを教える</div>
+    <div class="menuItem hasSubmenu" tabindex="0">
+      お着替え
+      <div id="shellMenu"></div>
+    </div>
+    <div class="menuItem" onclick="triggerFortune()">占い</div>
+    <div class="menuItem" onclick="triggerTimer()">集中タイマー</div>
+  </div>
+
+  <!-- 質問用入力モーダル -->
+  <div id="inputModal" class="hidden">
+    <div class="modalContent">
+      <div id="modalBalloon"></div>
+      <input type="text" id="modalInput" placeholder="テキストを入力してEnter">
+      <div class="modalButtons">
+        <button id="cancelBtn" onclick="hideModal()">やめる</button>
+        <button id="submitBtn">教える</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- メイン入力欄 -->
+  <input id="inputBox" placeholder="メッセージを入力して Enter" />
+
+  <script src="renderer.js"></script>
+</body>
+</html>

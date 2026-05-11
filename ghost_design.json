@@ -1,0 +1,11 @@
+{
+  "mainMenu": {
+    "textColor": "#333333",
+    "activeTextColor": "#333333",
+    "mutedTextColor": "rgba(255, 255, 255, 0.7)"
+  },
+  "windowYoko": {
+    "borderColor": "#808080",
+    "textColor": "#333333"
+  }
+}

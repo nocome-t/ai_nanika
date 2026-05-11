@@ -1,0 +1,47 @@
+{
+  "name": "ai-nanka",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.yourname.ainanka",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg"
+      ]
+    },
+    "files": [
+      "**/*",
+      "!dist/**",
+      "!.git/**",
+      "!.env",
+      "!.env.*",
+      "!README.md"
+    ],
+    "extraResources": [
+      "persona.txt",
+      "topics.json",
+      "qa.txt",
+      "style_examples.json",
+      "ghost_design.json",
+      "main_menu.png",
+      "window_yoko.png",
+      "ghost_normal.png",
+      "ghost_happy.png",
+      "ghost_sad.png",
+      "ghost_surprised.png"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "dependencies": {
+    "fs-extra": "^10.1.0",
+    "openai": "^4.0.0"
+  }
+}
