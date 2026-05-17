@@ -1,0 +1,4 @@
+{
+  "name": "ghost-generator-primary-dev",
+  "main": "../generator-main.js"
+}

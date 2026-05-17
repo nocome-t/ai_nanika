@@ -1,0 +1,24 @@
+{
+  "appId": "com.ainanika.ghost-generator-primary",
+  "productName": "Ghost-generator 🔰primary",
+  "mac": {
+    "category": "public.app-category.utilities",
+    "target": [
+      "dmg"
+    ]
+  },
+  "files": [
+    "generator-main.js",
+    "generator.html",
+    "generator.css",
+    "generator-renderer.js",
+    "package.json",
+    "node_modules/**/*"
+  ],
+  "extraMetadata": {
+    "main": "generator-main.js"
+  },
+  "directories": {
+    "output": "dist/ghost-generator-primary"
+  }
+}

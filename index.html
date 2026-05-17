@@ -33,7 +33,11 @@
     }
 
     #ghost {
+      display: block;
       width: 100%;
+      vertical-align: bottom;
+      object-fit: contain;
+      object-position: bottom center;
       animation: float 3s ease-in-out infinite;
     }
 
@@ -201,6 +205,11 @@
       border: 2px solid #e2e8f0;
       margin-bottom: 20px;
       color: var(--window-yoko-text-color);
+      background: white;
+      pointer-events: auto;
+      user-select: text;
+      -webkit-user-select: text;
+      -webkit-app-region: no-drag;
     }
 
     /* モーダル内のボタン */

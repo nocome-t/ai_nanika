@@ -1,0 +1,252 @@
+:root {
+  --bg: #f0f0f0;
+  --panel: #f8f8f8;
+  --line: #cfcfcf;
+  --line-strong: #b7b7b7;
+  --text: #2b2b2b;
+  --muted: #6f6f6f;
+  --blue: #168bd0;
+  --blue-hover: #0f78b8;
+  --green: #2ca56a;
+  --red: #d34d4d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", sans-serif;
+  letter-spacing: 0;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.appShell {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-strong);
+  border-bottom: 0;
+  background: linear-gradient(#fafafa, #ececec);
+}
+
+.brandHeader {
+  position: relative;
+  padding: 42px 28px 14px;
+}
+
+.brandMark {
+  color: #c4c8d6;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.version {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  color: #555;
+  font-size: 11px;
+}
+
+h1 {
+  margin: 14px 0 0;
+  font-size: 25px;
+  line-height: 1.1;
+  font-weight: 800;
+}
+
+.introLine {
+  padding: 10px 28px;
+  color: #555;
+  font-size: 14px;
+}
+
+.uploadList {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 28px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.uploadItem {
+  min-height: 98px;
+}
+
+.uploadLabel {
+  margin-bottom: 8px;
+  color: #5d5d5d;
+  font-size: 15px;
+}
+
+.uploadLabel strong {
+  color: #4b4b4b;
+  font-weight: 500;
+}
+
+.dropButton {
+  width: 78px;
+  height: 64px;
+  border: 1px solid #9f9f9f;
+  border-radius: 4px;
+  background: #fff;
+  color: #444;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.dropButton:hover,
+.dropButton.dragOver {
+  border-color: var(--blue);
+  background: #f4fbff;
+}
+
+.dropButton:active {
+  transform: translateY(1px);
+}
+
+.plus {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.stateText {
+  display: none;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  text-align: center;
+}
+
+.uploadItem.uploaded .dropButton {
+  width: 142px;
+  height: 64px;
+  border-color: rgba(44, 165, 106, 0.65);
+  background: #f5fff9;
+  color: var(--green);
+}
+
+.uploadItem.uploaded .plus {
+  display: none;
+}
+
+.uploadItem.uploaded .stateText {
+  display: block;
+}
+
+.fileName {
+  margin: 4px 0 0;
+  max-width: 330px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.errorBox {
+  min-height: 28px;
+  padding: 0 28px;
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.actionBar {
+  height: 94px;
+  padding: 16px 38px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+button {
+  font: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.secondaryButton,
+.primaryButton {
+  min-width: 146px;
+  height: 43px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.secondaryButton {
+  border: 1px solid #b9b9b9;
+  background: #fff;
+  color: #555;
+}
+
+.secondaryButton:hover {
+  background: #f7f7f7;
+}
+
+.primaryButton {
+  border: 0;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 700;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--blue-hover);
+}
+
+.primaryButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.66);
+  padding: 28px;
+  -webkit-app-region: no-drag;
+}
+
+.hidden {
+  display: none;
+}
+
+.completeDialog {
+  width: 318px;
+  min-height: 238px;
+  padding: 26px 24px 22px;
+  border-radius: 6px;
+  background: #f7f7f7;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+.completeMessage {
+  margin: 0;
+  color: #444;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.completePath {
+  min-height: 34px;
+  margin: 10px 0 18px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  word-break: break-all;
+}

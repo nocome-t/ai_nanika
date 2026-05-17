@@ -10,33 +10,15 @@ const REQUIRED_GHOST_FILES = [
   'topics.json',
   'messages.json',
   'ghost_normal.png',
-  'ghost_happy.png',
-  'ghost_sad.png',
-  'ghost_surprised.png',
 ];
 
 const REQUIRED_SHELL_FILES = [
   'persona.txt',
   'topics.json',
   'ghost_normal.png',
-  'ghost_happy.png',
-  'ghost_sad.png',
-  'ghost_surprised.png',
 ];
-
-const OPTIONAL_GHOST_FILES = [
-  'style_examples.json',
-  'ghost_design.json',
-  'main_menu.png',
-  'main_manu.png',
-  'window_yoko.png',
-];
-
-const OPTIONAL_SHELL_FILES = [
-  'style_examples.json',
-  'shell.json',
-  'messages.json',
-];
+const EMOTE_FILE_NAME = 'emote.csv';
+const MAX_EXTRA_EXPRESSIONS = 24;
 
 function getBundledResourceDir() {
   return app.isPackaged ? process.resourcesPath : __dirname;
@@ -73,6 +55,102 @@ function readJsonFile(filePath, fallback = null) {
     console.error('JSON読み込み失敗:', filePath, error);
     return fallback;
   }
+}
+
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  const source = String(text || '').replace(/^\uFEFF/, '');
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    const nextChar = source[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(field.trim());
+      field = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') i += 1;
+      row.push(field.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      field = '';
+      continue;
+    }
+
+    field += char;
+  }
+
+  row.push(field.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function isImageFileName(fileName) {
+  return /\.(png|jpe?g|webp|gif|avif)$/i.test(String(fileName || ''));
+}
+
+function validateEmoteCsv(folderPath) {
+  const emotePath = path.join(folderPath, EMOTE_FILE_NAME);
+  if (!fs.existsSync(emotePath)) return { ok: true, missingFiles: [], reason: '' };
+
+  const rows = parseCsvRows(fs.readFileSync(emotePath, 'utf8'));
+  const dataRows = rows.slice(1).filter((row) => row.length >= 3 && row.some(Boolean));
+  const usableRows = dataRows.filter((row) => row[0] && isImageFileName(row[2]));
+  const missingFiles = [...new Set(usableRows
+    .slice(0, MAX_EXTRA_EXPRESSIONS)
+    .map((row) => row[2].trim())
+    .filter((fileName) => !fs.existsSync(path.join(folderPath, fileName))))];
+
+  if (missingFiles.length > 0) {
+    return { ok: false, missingFiles, reason: 'emote.csvで指定された表情画像が見つかりません。' };
+  }
+
+  return { ok: true, missingFiles: [], reason: '' };
+}
+
+function validateSkinshipAreasConfig(ghostDesign) {
+  const skinshipAreas = ghostDesign?.skinshipAreas;
+  if (!skinshipAreas) return { ok: true, reason: '' };
+  if (typeof skinshipAreas !== 'object' || Array.isArray(skinshipAreas)) {
+    return { ok: false, reason: 'ghost_design.json の skinshipAreas はオブジェクトで指定してください。' };
+  }
+
+  for (const areaName of ['head', 'face', 'bust']) {
+    const area = skinshipAreas[areaName];
+    if (area == null) continue;
+    if (typeof area !== 'object' || Array.isArray(area)) {
+      return { ok: false, reason: `skinshipAreas.${areaName} はオブジェクトで指定してください。` };
+    }
+
+    for (const key of ['x', 'y', 'width', 'height']) {
+      const value = Number(area[key]);
+      if (!Number.isFinite(value) || value < 0 || value > 1) {
+        return { ok: false, reason: `skinshipAreas.${areaName}.${key} は0〜1の数値で指定してください。` };
+      }
+    }
+
+    if (Number(area.x) + Number(area.width) > 1 || Number(area.y) + Number(area.height) > 1) {
+      return { ok: false, reason: `skinshipAreas.${areaName} は画像範囲内に収まる座標で指定してください。` };
+    }
+  }
+
+  return { ok: true, reason: '' };
 }
 
 function hasShellFiles(shellDir) {
@@ -184,7 +262,15 @@ function validateGhostFolder(folderPath) {
     const styleExamplesPath = path.join(folderPath, 'style_examples.json');
     if (fs.existsSync(styleExamplesPath)) JSON.parse(fs.readFileSync(styleExamplesPath, 'utf8'));
     const ghostDesignPath = path.join(folderPath, 'ghost_design.json');
-    if (fs.existsSync(ghostDesignPath)) JSON.parse(fs.readFileSync(ghostDesignPath, 'utf8'));
+    if (fs.existsSync(ghostDesignPath)) {
+      const ghostDesign = JSON.parse(fs.readFileSync(ghostDesignPath, 'utf8'));
+      const skinshipValidation = validateSkinshipAreasConfig(ghostDesign);
+      if (!skinshipValidation.ok) {
+        return { ok: false, missingFiles: [], reason: skinshipValidation.reason };
+      }
+    }
+    const emoteValidation = validateEmoteCsv(folderPath);
+    if (!emoteValidation.ok) return emoteValidation;
   } catch (error) {
     return {
       ok: false,
@@ -226,6 +312,16 @@ function validateShellFolder(shellDir, label = 'Shell') {
     if (fs.existsSync(shellMetaPath)) JSON.parse(fs.readFileSync(shellMetaPath, 'utf8'));
     const messagesPath = path.join(shellDir, 'messages.json');
     if (fs.existsSync(messagesPath)) JSON.parse(fs.readFileSync(messagesPath, 'utf8'));
+    const ghostDesignPath = path.join(shellDir, 'ghost_design.json');
+    if (fs.existsSync(ghostDesignPath)) {
+      const ghostDesign = JSON.parse(fs.readFileSync(ghostDesignPath, 'utf8'));
+      const skinshipValidation = validateSkinshipAreasConfig(ghostDesign);
+      if (!skinshipValidation.ok) {
+        return { ok: false, missingFiles: [], reason: skinshipValidation.reason };
+      }
+    }
+    const emoteValidation = validateEmoteCsv(shellDir);
+    if (!emoteValidation.ok) return emoteValidation;
   } catch (error) {
     return {
       ok: false,
@@ -398,22 +494,10 @@ ipcMain.handle('switch-ghost', async (event, folderPath) => {
   try {
     await fs.remove(tmpDir);
     await fs.ensureDir(tmpDir);
-
-    for (const file of REQUIRED_GHOST_FILES) {
-      await fs.copy(path.join(folderPath, file), path.join(tmpDir, file), { overwrite: true });
-    }
-
-    for (const file of OPTIONAL_GHOST_FILES) {
-      const sourcePath = path.join(folderPath, file);
-      if (fs.existsSync(sourcePath)) {
-        await fs.copy(sourcePath, path.join(tmpDir, file), { overwrite: true });
-      }
-    }
-
-    const sourceShellsDir = path.join(folderPath, 'shells');
-    if (fs.existsSync(sourceShellsDir)) {
-      await fs.copy(sourceShellsDir, path.join(tmpDir, 'shells'), { overwrite: true });
-    }
+    await fs.copy(folderPath, tmpDir, {
+      overwrite: true,
+      filter: (sourcePath) => path.basename(sourcePath) !== '.DS_Store',
+    });
 
     await fs.writeJson(path.join(tmpDir, '.ghost_meta.json'), {
       ghostId: crypto.randomUUID(),
@@ -454,17 +538,10 @@ ipcMain.handle('switch-shell', async (event, shellKey) => {
 
     await fs.remove(tmpDir);
     await fs.ensureDir(tmpDir);
-
-    for (const file of REQUIRED_SHELL_FILES) {
-      await fs.copy(path.join(resolved.shellDir, file), path.join(tmpDir, file), { overwrite: true });
-    }
-
-    for (const file of OPTIONAL_SHELL_FILES) {
-      const sourcePath = path.join(resolved.shellDir, file);
-      if (fs.existsSync(sourcePath)) {
-        await fs.copy(sourcePath, path.join(tmpDir, file), { overwrite: true });
-      }
-    }
+    await fs.copy(resolved.shellDir, tmpDir, {
+      overwrite: true,
+      filter: (sourcePath) => path.basename(sourcePath) !== '.DS_Store',
+    });
 
     await fs.writeJson(path.join(tmpDir, '.shell_meta.json'), {
       shellId: crypto.randomUUID(),

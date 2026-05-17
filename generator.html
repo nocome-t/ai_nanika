@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ghost-generator 🔰primary</title>
+  <link rel="stylesheet" href="./generator.css" />
+</head>
+<body>
+  <main class="appShell">
+    <header class="brandHeader">
+      <div class="brandMark">AInanika</div>
+      <div class="version">Ver.0.5.0対応版</div>
+      <h1>Ghost-generator 🔰primary</h1>
+    </header>
+
+    <section class="introLine">ai_nanikaのghostを自動で生成できるツールです</section>
+
+    <section class="uploadList" aria-label="Ghost生成に必要なファイル">
+      <article class="uploadItem" data-kind="ghost">
+        <div class="uploadLabel"><strong>ghost_normal.png</strong> をアップロードしてね</div>
+        <button class="dropButton" type="button" aria-label="ghost_normal.pngを選択">
+          <span class="plus">+</span>
+          <span class="stateText"></span>
+        </button>
+        <p class="fileName"></p>
+      </article>
+
+      <article class="uploadItem" data-kind="persona">
+        <div class="uploadLabel"><strong>persona.txt</strong> をアップロードしてね</div>
+        <button class="dropButton" type="button" aria-label="persona.txtを選択">
+          <span class="plus">+</span>
+          <span class="stateText"></span>
+        </button>
+        <p class="fileName"></p>
+      </article>
+
+      <article class="uploadItem" data-kind="topics">
+        <div class="uploadLabel"><strong>topics.json</strong> をアップロードしてね</div>
+        <button class="dropButton" type="button" aria-label="topics.jsonを選択">
+          <span class="plus">+</span>
+          <span class="stateText"></span>
+        </button>
+        <p class="fileName"></p>
+      </article>
+    </section>
+
+    <section class="errorBox" id="errorBox" aria-live="polite"></section>
+
+    <footer class="actionBar">
+      <button class="secondaryButton" id="closeButton" type="button">閉じる</button>
+      <button class="primaryButton" id="generateButton" type="button" disabled>Ghostを生成</button>
+    </footer>
+  </main>
+
+  <div class="modalOverlay hidden" id="completeModal">
+    <section class="completeDialog" role="dialog" aria-modal="true" aria-labelledby="completeTitle">
+      <p class="completeMessage" id="completeTitle">おめでとう！<br>あなただけのゴーストが完成したよ。<br>さっそくAI nanikaを起動して<br>ghostを切り替えてみてね♪<br>もっとあなた好みにカスタムしたい時は<br>Ghostの育て方 を読んでみてね🌸</p>
+      <p class="completePath" id="completePath"></p>
+      <button class="primaryButton" id="revealButton" type="button">ファイルを開く</button>
+    </section>
+  </div>
+
+  <script src="./generator-renderer.js"></script>
+</body>
+</html>

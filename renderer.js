@@ -3,23 +3,26 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const { ipcRenderer } = require('electron');
 
-const OPENAI_MODEL = 'gpt-4o-mini';
+const OPENAI_MODEL = 'gpt-5-mini';
 const OPENAI_API_KEY_STORAGE_KEY = 'OPENAI_API_KEY';
 
-const EXPRESSION_MAP = {
+const DEFAULT_EXPRESSION_MAP = {
   '[通常]': 'ghost_normal.png',
   '[喜]': 'ghost_happy.png',
   '[哀]': 'ghost_sad.png',
   '[驚]': 'ghost_surprised.png',
 };
+const EMOTE_FILE_NAME = 'emote.csv';
+const MAX_EXTRA_EXPRESSIONS = 24;
 
 const SHELL_CHANGE_PENDING_KEY = 'SHELL_CHANGE_PENDING';
 
-const SKINSHIP_AREAS = {
+const DEFAULT_SKINSHIP_AREAS = {
   head: { x: 0.2, y: 0.05, width: 0.6, height: 0.15 },
   face: { x: 0.35, y: 0.21, width: 0.3, height: 0.2 },
   bust: { x: 0.25, y: 0.65, width: 0.45, height: 0.15 },
 };
+const SKINSHIP_AREA_NAMES = ['head', 'face', 'bust'];
 
 const SKINSHIP_STROKE_SEQUENCE = ['right', 'left', 'right'];
 const SKINSHIP_STROKE_MIN_DISTANCE = 10;
@@ -89,6 +92,8 @@ let personaSetting = '';
 let topicPool = [];
 let styleExamples = [];
 let styleTypeDescriptions = {};
+let expressionMap = { ...DEFAULT_EXPRESSION_MAP };
+let expressionPrompt = '';
 let messageQueue = [];
 let currentIdx = 0;
 let ghostMessages = {};
@@ -113,6 +118,7 @@ let skinshipDebugVisible = false;
 let skinshipDebugElements = [];
 let ghostWindowBackgroundPath = '';
 let ghostDesign = DEFAULT_GHOST_DESIGN;
+let skinshipAreas = DEFAULT_SKINSHIP_AREAS;
 
 function toFileUrl(filePath) {
   return pathToFileURL(filePath).href;
@@ -238,7 +244,7 @@ function loadGhostMessages() {
 }
 
 function findGhostAsset(fileNames) {
-  const dirs = [appPaths.ghostBaseDir || baseDir].filter(Boolean);
+  const dirs = [baseDir, appPaths.ghostBaseDir || baseDir].filter(Boolean);
   for (const dir of dirs) {
     for (const fileName of fileNames) {
       const assetPath = path.join(dir, fileName);
@@ -253,8 +259,184 @@ function cssFileUrl(filePath) {
   return `url("${toFileUrl(filePath).replace(/"/g, '%22')}")`;
 }
 
+function parseCsvRows(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  const source = String(text || '').replace(/^\uFEFF/, '');
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+    const nextChar = source[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(field.trim());
+      field = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') i += 1;
+      row.push(field.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      field = '';
+      continue;
+    }
+
+    field += char;
+  }
+
+  row.push(field.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function normalizeExpressionName(value) {
+  return String(value || '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getExpressionTags(label) {
+  const normalized = normalizeExpressionName(label);
+  if (!normalized) return [];
+
+  const tags = new Set([normalized]);
+  const japaneseName = normalized.replace(/\s*[（(].*?[）)]\s*/g, '').trim();
+  const englishMatches = [...normalized.matchAll(/[（(]\s*([^）)]+?)\s*[）)]/g)];
+  if (japaneseName) tags.add(japaneseName);
+  for (const match of englishMatches) {
+    if (match[1]) tags.add(match[1].trim());
+  }
+
+  return [...tags].map((tag) => `[${tag}]`);
+}
+
+function isImageFileName(fileName) {
+  return /\.(png|jpe?g|webp|gif|avif)$/i.test(String(fileName || ''));
+}
+
+function activeGhostFileExists(fileName) {
+  return Boolean(fileName && fs.existsSync(path.join(baseDir, fileName)));
+}
+
+function getAvailableDefaultExpressionMap() {
+  return Object.entries(DEFAULT_EXPRESSION_MAP).reduce((map, [tag, fileName]) => {
+    if (tag === '[通常]' || activeGhostFileExists(fileName)) {
+      map[tag] = fileName;
+    }
+    return map;
+  }, {});
+}
+
+function loadExpressionMap() {
+  const nextMap = getAvailableDefaultExpressionMap();
+  const rowsForPrompt = [];
+  const dirs = [baseDir, appPaths.ghostBaseDir || baseDir].filter(Boolean);
+  const uniqueDirs = [...new Set(dirs)];
+  let mappedExtraCount = 0;
+
+  for (const dir of uniqueDirs) {
+    const emotePath = path.join(dir, EMOTE_FILE_NAME);
+    const rows = parseCsvRows(safeReadText(emotePath, ''));
+    const dataRows = rows.slice(1).filter((row) => row.length >= 3);
+
+    for (const row of dataRows) {
+      if (mappedExtraCount >= MAX_EXTRA_EXPRESSIONS) break;
+
+      const label = normalizeExpressionName(row[0]);
+      const description = normalizeExpressionName(row[1]);
+      const fileName = normalizeExpressionName(row[2]);
+      if (!label || !isImageFileName(fileName)) continue;
+
+      for (const tag of getExpressionTags(label)) {
+        nextMap[tag] = fileName;
+      }
+
+      if (rowsForPrompt.length < MAX_EXTRA_EXPRESSIONS) {
+        rowsForPrompt.push({ label, description, fileName });
+      }
+      mappedExtraCount += 1;
+    }
+  }
+
+  expressionMap = nextMap;
+  expressionPrompt = buildExpressionPrompt(rowsForPrompt, Object.keys(nextMap));
+}
+
+function buildExpressionPrompt(rows, fallbackTags = []) {
+  const expressionRows = Array.isArray(rows) ? rows : [];
+  const usableFallbackTags = fallbackTags.filter((tag) => tag !== '[通常]');
+
+  const lines = expressionRows.map((row, index) => {
+    const description = row.description ? ` / ${row.description}` : '';
+    return `${index + 1}. [${row.label}]${description} -> ${row.fileName}`;
+  });
+  const fallbackLine = usableFallbackTags.length > 0
+    ? `・追加表情に当てはまるものがない場合だけ、利用可能な基本表情 ${usableFallbackTags.join(' ')} を使ってください。`
+    : '・利用可能な基本表情は [通常] のみです。追加表情に当てはまらない場合は [通常] を使ってください。';
+  const emoteLines = lines.length > 0
+    ? `・使える追加表情は emote.csv の次の一覧です。\n${lines.join('\n')}`
+    : '・このGhostには emote.csv の追加表情がありません。';
+
+  return `
+
+【表情タグ】
+・返答の各パートの先頭に、表情タグを1つだけ付けてください。
+・まず emote.csv の追加表情から、発話のニュアンスに最も近い具体的な感情を選んでください。
+${fallbackLine}
+・[通常] は感情が薄い説明、相づち、落ち着いた話題だけに使ってください。タグがない場合も通常表情になります。
+・一つの返答に複数パートがある場合は、同じタグを続けず、文脈が変わるたびに具体的な追加表情を優先してください。
+${emoteLines}`;
+}
+
+function resolveExpressionFile(message) {
+  const msg = String(message || '');
+
+  for (const [tag, fileName] of Object.entries(expressionMap)) {
+    if (msg.includes(tag)) return fileName;
+  }
+
+  return 'ghost_normal.png';
+}
+
 function stripExpressionTags(text) {
-  return String(text || '').replace(/\[(通常|喜|哀|驚)\]/g, '');
+  return String(text || '').replace(/[\[【][^\]】]+[\]】]/g, '').trim();
+}
+
+function normalizeSkinshipArea(area, fallback) {
+  if (!area || typeof area !== 'object') return { ...fallback };
+
+  const nextArea = { ...fallback };
+  for (const key of ['x', 'y', 'width', 'height']) {
+    const value = Number(area[key]);
+    if (Number.isFinite(value)) nextArea[key] = clampNumber(value, 0, 1);
+  }
+
+  nextArea.width = clampNumber(nextArea.width, 0, 1 - nextArea.x);
+  nextArea.height = clampNumber(nextArea.height, 0, 1 - nextArea.y);
+  return nextArea;
+}
+
+function normalizeSkinshipAreas(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return SKINSHIP_AREA_NAMES.reduce((areas, areaName) => {
+    areas[areaName] = normalizeSkinshipArea(source[areaName], DEFAULT_SKINSHIP_AREAS[areaName]);
+    return areas;
+  }, {});
 }
 
 function mergeGhostDesign(data) {
@@ -267,6 +449,7 @@ function mergeGhostDesign(data) {
       ...DEFAULT_GHOST_DESIGN.windowYoko,
       ...(data?.windowYoko || {}),
     },
+    skinshipAreas: normalizeSkinshipAreas(data?.skinshipAreas),
   };
 }
 
@@ -277,6 +460,7 @@ function setCssVar(name, value) {
 function loadGhostDesign() {
   const designPath = findGhostAsset(['ghost_design.json']);
   ghostDesign = mergeGhostDesign(designPath ? safeReadJson(designPath, {}) : {});
+  skinshipAreas = ghostDesign.skinshipAreas;
 }
 
 function applyGhostDesignAssets() {
@@ -377,6 +561,7 @@ function loadSettings() {
   topicPool = safeReadJson(topicsPath, []);
   ghostMessages = loadGhostMessages();
   styleExamples = loadStyleExamples();
+  loadExpressionMap();
 
   const savedData = safeReadJson(memoryPath, {});
   const isSameGhost = savedData.ghostId === ghostId;
@@ -397,8 +582,12 @@ function saveMemory() {
 }
 
 function setGhostImage(fileName = 'ghost_normal.png') {
-  const imagePath = path.join(baseDir, fileName);
-  ghostImg.src = toFileUrl(fs.existsSync(imagePath) ? imagePath : path.join(baseDir, 'ghost_normal.png'));
+  const candidates = [
+    path.join(baseDir, fileName),
+    path.join(baseDir, 'ghost_normal.png'),
+  ];
+  const imagePath = candidates.find((candidate) => fs.existsSync(candidate));
+  if (imagePath) ghostImg.src = toFileUrl(imagePath);
 }
 
 function splitMessage(message) {
@@ -423,6 +612,12 @@ function pickRandomMessage(value) {
   }
 
   return typeof value === 'string' ? value : '';
+}
+
+function formatMessageTemplate(message, values = {}) {
+  return String(message || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => {
+    return Object.prototype.hasOwnProperty.call(values, key) ? String(values[key]) : match;
+  });
 }
 
 function getSkinshipPoint(event) {
@@ -495,7 +690,7 @@ function updateGhostResizeCursor(event) {
 }
 
 function isPointInSkinshipArea(point, areaName) {
-  const area = SKINSHIP_AREAS[areaName];
+  const area = skinshipAreas[areaName];
   if (!point || !area) return false;
 
   return (
@@ -527,7 +722,7 @@ function positionSkinshipDebugAreas() {
   if (imageWidth <= 0 || imageHeight <= 0) return;
 
   for (const element of skinshipDebugElements) {
-    const area = SKINSHIP_AREAS[element.dataset.areaName];
+    const area = skinshipAreas[element.dataset.areaName];
     if (!area) continue;
 
     element.style.left = `${ghostImg.offsetLeft + imageWidth * area.x}px`;
@@ -658,17 +853,10 @@ function showNextMessage() {
 
   if (currentIdx < messageQueue.length) {
     let msg = messageQueue[currentIdx];
-    let expFile = 'ghost_normal.png';
-
-    for (const [tag, fileName] of Object.entries(EXPRESSION_MAP)) {
-      if (msg.includes(tag)) {
-        expFile = fileName;
-        break;
-      }
-    }
+    const expFile = resolveExpressionFile(msg);
 
     setGhostImage(expFile);
-    balloon.textContent = msg.replace(/[\[【].*?[\]】]/g, '').trim();
+    balloon.textContent = stripExpressionTags(msg);
     balloon.style.display = 'block';
     currentIdx += 1;
     return;
@@ -696,6 +884,20 @@ function extractMemo(text) {
   }
 
   return text.replace(/\[MEMO:\s*[^\]]+\]/g, '').trim();
+}
+
+function extractResponseText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text;
+  }
+
+  if (!Array.isArray(data?.output)) return '';
+
+  return data.output
+    .flatMap((item) => (Array.isArray(item?.content) ? item.content : []))
+    .filter((content) => content?.type === 'output_text' && typeof content.text === 'string')
+    .map((content) => content.text)
+    .join('');
 }
 
 function pickTopic() {
@@ -761,6 +963,19 @@ ${needsRedirect ? '今回の返答ではルール1を必ず実行してくださ
 
 function stripResponseMeta(text) {
   return String(text || '').replace(/\[SEP\]/g, ' ').replace(/[\[【].*?[\]】]/g, '').trim();
+}
+
+function buildRecentConversationReference(limit = 6) {
+  const lines = chatHistory
+    .slice(-limit)
+    .map((entry) => {
+      const role = entry.role === 'assistant' ? 'AInanika' : 'ユーザー';
+      const content = stripResponseMeta(entry.content).replace(/\s+/g, ' ').slice(0, 90);
+      return content ? `・${role}: ${content}` : '';
+    })
+    .filter(Boolean);
+
+  return lines.join('\n');
 }
 
 function extractQuestions(text) {
@@ -1003,7 +1218,16 @@ function buildSystemPrompt(isAutoTalk, options = {}) {
   const facts = userFacts.length > 0 ? userFacts.map((fact) => `・${fact}`).join('\n') : 'まだ記憶はありません。';
   const topic = options.topic || pickTopic();
   const styleExamplesPrompt = buildStyleExamplesPrompt(options.userText || '', isAutoTalk, options);
-  const autoTalk = isAutoTalk ? `\n今回は雑談です。話題候補「${topic}」から自然に話しかけてください。` : '';
+  const recentConversationReference = options.recentConversationReference || '';
+  const autoTalk = isAutoTalk ? `
+
+【ランダムトークの話題制御】
+・今回の主題は topics.json から選ばれた話題候補「${topic}」です。
+・ランダムトークは直前会話の続きではなく、新しい会話の起点として発話してください。
+・直近の会話内容は、相手との関係性や記憶の参考にだけ使ってください。直近会話を主題にしてはいけません。
+・直近会話と話題候補に関連度の高いワードがある場合だけ、「そういえば」を使って1文だけ軽く触れてください。
+・関連づけが弱い場合は、直近会話には触れず、話題候補から自然に話しかけてください。
+${recentConversationReference ? `\n直近会話の参考:\n${recentConversationReference}` : ''}` : '';
   const conversationTopicGuidance = getConversationTopicGuidance(options);
   const conversationStartRule = options.conversationStart ? `
 ・これは会話モード開始直後の最初の発話です。ユーザーの入力を待たず、あなたから自然に話しかけてください。
@@ -1026,6 +1250,7 @@ ${personaSetting}
 【覚えているユーザー情報】
 ${facts}
 ${styleExamplesPrompt}
+${expressionPrompt}
 ${autoTalk}
 ${conversationTopicGuidance}
 ${conversationRule}`;
@@ -1044,9 +1269,11 @@ async function callAI(userText = null, isAutoTalk = false, options = {}) {
 
   try {
     const useInterpretationReply = isConversationMode && Boolean(userText) && Math.random() < 0.5;
+    const recentConversationReference = isAutoTalk ? buildRecentConversationReference() : '';
+    const historyForMessages = isAutoTalk ? [] : chatHistory.slice(-12);
     const messages = [
-      { role: 'system', content: buildSystemPrompt(isAutoTalk, { ...options, userText, useInterpretationReply }) },
-      ...chatHistory.slice(-12),
+      { role: 'system', content: buildSystemPrompt(isAutoTalk, { ...options, userText, useInterpretationReply, recentConversationReference }) },
+      ...historyForMessages,
     ];
 
     if (userText) {
@@ -1058,7 +1285,7 @@ async function callAI(userText = null, isAutoTalk = false, options = {}) {
       const questionLine = isConversationMode ? '最後は必ずユーザーへの質問で終えてください。' : '';
       messages.push({
         role: 'user',
-        content: `${topicLine}自然な雑談として、短く話しかけてください。${questionLine}`,
+        content: `${topicLine}topics.json の話題を主題にしたランダムトークとして、短く話しかけてください。直前会話をそのまま続けず、関連が強い場合だけ「そういえば」で軽く橋渡ししてください。${questionLine}`,
       });
     }
 
@@ -1066,7 +1293,7 @@ async function callAI(userText = null, isAutoTalk = false, options = {}) {
     let repeatedQuestion = null;
     let startsWithTransition = false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1074,8 +1301,8 @@ async function callAI(userText = null, isAutoTalk = false, options = {}) {
         },
         body: JSON.stringify({
           model: OPENAI_MODEL,
-          messages,
-          temperature: 0.9,
+          input: messages,
+          reasoning: { effort: 'minimal' },
         }),
       });
 
@@ -1090,7 +1317,7 @@ async function callAI(userText = null, isAutoTalk = false, options = {}) {
       }
 
       const data = await response.json();
-      rawReply = data.choices?.[0]?.message?.content || '';
+      rawReply = extractResponseText(data);
       repeatedQuestion = findRepeatedQuestion(rawReply);
       startsWithTransition = isConversationMode && startsWithTopicTransition(rawReply);
       if ((!repeatedQuestion && !startsWithTransition) || attempt === 1) break;
@@ -1129,7 +1356,11 @@ function showModal(msg, onConfirm, placeholder = 'テキストを入力してEnt
   modalInput.type = options.inputType || 'text';
   modalInput.placeholder = placeholder;
   modalInput.inputMode = options.inputMode || '';
-  modalInput.maxLength = options.maxLength || '';
+  if (Number.isInteger(options.maxLength) && options.maxLength > 0) {
+    modalInput.maxLength = options.maxLength;
+  } else {
+    modalInput.removeAttribute('maxlength');
+  }
   const useGhostWindowSkin = Boolean(options.useGhostWindowSkin && ghostWindowBackgroundPath);
   if (modalContent) {
     if (useGhostWindowSkin) {
@@ -1145,7 +1376,10 @@ function showModal(msg, onConfirm, placeholder = 'テキストを入力してEnt
     }
   }
   inputModal.classList.remove('hidden');
-  modalInput.focus();
+  requestAnimationFrame(() => {
+    modalInput.focus();
+    modalInput.click();
+  });
 
   modalInput.onbeforeinput = (event) => {
     if (!options.digitsOnly || event.inputType?.startsWith('delete')) return;
@@ -1202,7 +1436,7 @@ function hideModal() {
   submitBtn.onclick = null;
   cancelBtn.onclick = hideModal;
   modalInput.inputMode = '';
-  modalInput.maxLength = '';
+  modalInput.removeAttribute('maxlength');
   modalInput.type = 'text';
   submitBtn.disabled = false;
   cancelBtn.disabled = false;
@@ -1353,13 +1587,17 @@ async function switchShell(shellKey, displayName, isActive = false) {
   mainMenu.classList.add('hidden');
 
   if (isActive) {
-    enqueueMessage(`[通常]今はもう${displayName}だよ。[SEP][喜]別の服にしたくなったら、また選んでね。`);
+    const message = pickRandomMessage(ghostMessages.shell_already_active)
+      || `[通常]今はもう{displayName}だよ。[SEP][喜]別の服にしたくなったら、また選んでね。`;
+    enqueueMessage(formatMessageTemplate(message, { displayName }));
     return;
   }
 
   if (!confirm(`${displayName}にお着替えしますか？`)) return;
 
-  enqueueMessage('[通常]おっけー！[SEP][喜]着替えてくるね！', async () => {
+  const message = pickRandomMessage(ghostMessages.shell_change_start)
+    || '[通常]おっけー！[SEP][喜]着替えてくるね！';
+  enqueueMessage(formatMessageTemplate(message, { displayName }), async () => {
     markLocalShellChangePending(shellKey);
     const result = await ipcRenderer.invoke('switch-shell', shellKey);
     if (!result.ok) {
@@ -1465,7 +1703,7 @@ function setupSkinship() {
   ghostMaxWidth = characterContainer.getBoundingClientRect().width || ghostMaxWidth;
   applyGhostWidth(ghostMaxWidth);
 
-  skinshipDebugElements = Object.keys(SKINSHIP_AREAS).map((areaName) => {
+  skinshipDebugElements = SKINSHIP_AREA_NAMES.map((areaName) => {
     const element = document.createElement('div');
     element.className = 'skinshipDebugArea';
     element.dataset.areaName = areaName;
